@@ -510,11 +510,66 @@ with tab4:
         uploaded = st.file_uploader("📤 Import Bookings (CSV)", type=['csv'])
         if uploaded:
             imported_df = pd.read_csv(uploaded)
-            if st.button("Confirm Import"):
-                st.session_state.bookings = imported_df
-                save_bookings(st.session_state.bookings)
-                st.success("Imported successfully!")
-                st.rerun()
+            st.write(f"Found {len(imported_df)} rows")
+            st.write("Columns:", list(imported_df.columns))
+            
+            # Check for required columns
+            required = ['client_name', 'event_date', 'total_price']
+            missing = [c for c in required if c not in imported_df.columns]
+            
+            if missing:
+                st.error(f"Missing required columns: {missing}")
+                st.info("Required: client_name, event_date, total_price")
+                st.info("Optional: booking_date, is_ff, notes")
+            else:
+                if st.button("Confirm Import"):
+                    # Process each row and build full booking records
+                    processed = []
+                    for _, row in imported_df.iterrows():
+                        event_date = str(row['event_date'])
+                        price = float(row['total_price'])
+                        
+                        # Handle optional fields
+                        booking_date = str(row.get('booking_date', datetime.now().date()))
+                        if pd.isna(row.get('booking_date')):
+                            booking_date = str(datetime.now().date())
+                        
+                        is_ff_val = row.get('is_ff', False)
+                        if isinstance(is_ff_val, str):
+                            is_ff = is_ff_val.lower() in ['true', 'yes', '1', 'y']
+                        else:
+                            is_ff = bool(is_ff_val) if not pd.isna(is_ff_val) else False
+                        
+                        notes = str(row.get('notes', '')) if not pd.isna(row.get('notes')) else ''
+                        
+                        # Calculate payment schedule
+                        schedule = calculate_payment_schedule(event_date, price, booking_date)
+                        day_type = "Weekend" if is_weekend(event_date) else "Weekday"
+                        
+                        processed.append({
+                            'id': datetime.now().strftime('%Y%m%d%H%M%S') + str(len(processed)),
+                            'client_name': str(row['client_name']),
+                            'event_date': event_date,
+                            'booking_date': booking_date,
+                            'total_price': price,
+                            'day_type': day_type,
+                            'is_ff': is_ff,
+                            'notes': notes,
+                            'deposit_date': str(schedule['deposit']['date']),
+                            'deposit_amount': schedule['deposit']['amount'],
+                            'deposit_collected': False,
+                            'halfway_date': str(schedule['halfway']['date']),
+                            'halfway_amount': schedule['halfway']['amount'],
+                            'halfway_collected': False,
+                            'final_date': str(schedule['final']['date']),
+                            'final_amount': schedule['final']['amount'],
+                            'final_collected': False,
+                        })
+                    
+                    st.session_state.bookings = pd.DataFrame(processed)
+                    save_bookings(st.session_state.bookings)
+                    st.success(f"Imported {len(processed)} bookings!")
+                    st.rerun()
     
     st.divider()
     
