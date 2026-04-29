@@ -606,13 +606,34 @@ with tab4:
                 if st.button("Confirm Import"):
                     # Process each row and build full booking records
                     processed = []
+                    skipped = 0
                     for _, row in imported_df.iterrows():
+                        # Skip blank rows
+                        client = row.get('client_name')
+                        if pd.isna(client) or str(client).strip() == '':
+                            skipped += 1
+                            continue
+                        
+                        event_raw = row.get('event_date')
+                        if pd.isna(event_raw) or str(event_raw).strip() == '':
+                            skipped += 1
+                            continue
+                        
+                        price_raw = row.get('total_price')
+                        if pd.isna(price_raw) or str(price_raw).strip() == '':
+                            skipped += 1
+                            continue
+                        
                         # Parse dates flexibly
-                        event_date = parse_date(row['event_date'])
+                        event_date = parse_date(event_raw)
                         
                         # Parse price - handle currency symbols and commas
-                        price_str = str(row['total_price']).replace('$', '').replace(',', '').strip()
-                        price = float(price_str)
+                        price_str = str(price_raw).replace('$', '').replace(',', '').strip()
+                        try:
+                            price = float(price_str)
+                        except:
+                            skipped += 1
+                            continue
                         
                         # Handle optional fields
                         booking_date = parse_date(row.get('booking_date'))
@@ -651,7 +672,10 @@ with tab4:
                     
                     st.session_state.bookings = pd.DataFrame(processed)
                     save_bookings(st.session_state.bookings)
-                    st.success(f"Imported {len(processed)} bookings!")
+                    if skipped > 0:
+                        st.success(f"Imported {len(processed)} bookings! (Skipped {skipped} blank/invalid rows)")
+                    else:
+                        st.success(f"Imported {len(processed)} bookings!")
                     st.rerun()
     
     st.divider()
