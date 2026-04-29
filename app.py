@@ -40,14 +40,19 @@ def load_bookings():
                 if not data:
                     return pd.DataFrame()
                 df = pd.DataFrame(data)
-                # Validate required columns exist
+                # Validate required columns exist - silently clear if invalid
                 missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
                 if missing:
-                    st.warning(f"Corrupted data detected (missing: {missing}). Clearing...")
+                    # Delete the corrupted file
+                    DATA_FILE.unlink()
                     return pd.DataFrame()
                 return df
-        except Exception as e:
-            st.warning(f"Error loading data: {e}. Starting fresh.")
+        except Exception:
+            # Delete corrupted file and start fresh
+            try:
+                DATA_FILE.unlink()
+            except:
+                pass
             return pd.DataFrame()
     return pd.DataFrame()
 
@@ -218,8 +223,15 @@ with tab1:
     # Dashboard
     df = st.session_state.bookings
     
-    if df.empty:
-        st.info("No bookings yet. Add your first booking using the sidebar.")
+    # Check for valid data
+    if df.empty or 'total_price' not in df.columns:
+        if not df.empty:
+            # Bad data - clear it
+            st.session_state.bookings = pd.DataFrame()
+            save_bookings(st.session_state.bookings)
+            st.warning("Cleared invalid booking data. Please re-import.")
+            df = st.session_state.bookings
+        st.info("No bookings yet. Add your first booking using the sidebar or import a CSV in Settings.")
     else:
         # Summary metrics
         col1, col2, col3, col4 = st.columns(4)
