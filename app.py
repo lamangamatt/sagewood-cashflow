@@ -117,6 +117,42 @@ def get_default_price(event_date):
         return DEFAULT_WEEKEND_PRICE
     return DEFAULT_WEEKDAY_PRICE
 
+def parse_date(date_str):
+    """Parse date from various formats and return YYYY-MM-DD string."""
+    if pd.isna(date_str) or date_str is None:
+        return str(datetime.now().date())
+    
+    date_str = str(date_str).strip()
+    
+    # Try pandas first - it handles many formats
+    try:
+        parsed = pd.to_datetime(date_str)
+        return parsed.strftime('%Y-%m-%d')
+    except:
+        pass
+    
+    # Common formats to try
+    formats = [
+        '%Y-%m-%d',      # 2026-06-15
+        '%m/%d/%Y',      # 6/15/2026 or 06/15/2026
+        '%m-%d-%Y',      # 6-15-2026
+        '%d/%m/%Y',      # 15/06/2026
+        '%B %d, %Y',     # June 15, 2026
+        '%b %d, %Y',     # Jun 15, 2026
+        '%m/%d/%y',      # 6/15/26
+        '%Y/%m/%d',      # 2026/06/15
+    ]
+    
+    for fmt in formats:
+        try:
+            parsed = datetime.strptime(date_str, fmt)
+            return parsed.strftime('%Y-%m-%d')
+        except:
+            continue
+    
+    # Last resort - return as-is and hope for the best
+    return date_str
+
 # Check for reset parameter in URL
 query_params = st.query_params
 if query_params.get('reset') == 'true':
@@ -571,13 +607,15 @@ with tab4:
                     # Process each row and build full booking records
                     processed = []
                     for _, row in imported_df.iterrows():
-                        event_date = str(row['event_date'])
-                        price = float(row['total_price'])
+                        # Parse dates flexibly
+                        event_date = parse_date(row['event_date'])
+                        
+                        # Parse price - handle currency symbols and commas
+                        price_str = str(row['total_price']).replace('$', '').replace(',', '').strip()
+                        price = float(price_str)
                         
                         # Handle optional fields
-                        booking_date = str(row.get('booking_date', datetime.now().date()))
-                        if pd.isna(row.get('booking_date')):
-                            booking_date = str(datetime.now().date())
+                        booking_date = parse_date(row.get('booking_date'))
                         
                         is_ff_val = row.get('is_ff', False)
                         if isinstance(is_ff_val, str):
