@@ -26,13 +26,29 @@ MONTHLY_FIXED_EXPENSES = 46995  # From proforma
 
 DATA_FILE = Path("bookings.json")
 
+# Required columns for valid booking data
+REQUIRED_COLUMNS = ['client_name', 'event_date', 'total_price', 'booking_date', 
+                    'deposit_amount', 'halfway_amount', 'final_amount']
+
 # Helper functions
 def load_bookings():
-    """Load bookings from JSON file."""
+    """Load bookings from JSON file with validation."""
     if DATA_FILE.exists():
-        with open(DATA_FILE, 'r') as f:
-            data = json.load(f)
-            return pd.DataFrame(data) if data else pd.DataFrame()
+        try:
+            with open(DATA_FILE, 'r') as f:
+                data = json.load(f)
+                if not data:
+                    return pd.DataFrame()
+                df = pd.DataFrame(data)
+                # Validate required columns exist
+                missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+                if missing:
+                    st.warning(f"Corrupted data detected (missing: {missing}). Clearing...")
+                    return pd.DataFrame()
+                return df
+        except Exception as e:
+            st.warning(f"Error loading data: {e}. Starting fresh.")
+            return pd.DataFrame()
     return pd.DataFrame()
 
 def save_bookings(df):
@@ -96,9 +112,26 @@ def get_default_price(event_date):
         return DEFAULT_WEEKEND_PRICE
     return DEFAULT_WEEKDAY_PRICE
 
+# Check for reset parameter in URL
+query_params = st.query_params
+if query_params.get('reset') == 'true':
+    # Force clear the data file
+    if DATA_FILE.exists():
+        DATA_FILE.unlink()
+    st.session_state.bookings = pd.DataFrame()
+    save_bookings(st.session_state.bookings)
+    st.success("✅ Data cleared! Remove ?reset=true from URL to continue.")
+    st.stop()
+
 # Initialize session state
 if 'bookings' not in st.session_state:
     st.session_state.bookings = load_bookings()
+    # Double-check the loaded data is valid
+    if not st.session_state.bookings.empty:
+        missing = [c for c in REQUIRED_COLUMNS if c not in st.session_state.bookings.columns]
+        if missing:
+            st.session_state.bookings = pd.DataFrame()
+            save_bookings(st.session_state.bookings)
 
 # Sidebar - Add Booking
 with st.sidebar:
