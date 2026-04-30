@@ -174,6 +174,10 @@ if 'bookings' not in st.session_state:
             st.session_state.bookings = pd.DataFrame()
             save_bookings(st.session_state.bookings)
 
+# Track which booking is being edited
+if 'editing_booking_id' not in st.session_state:
+    st.session_state.editing_booking_id = None
+
 # Sidebar - Add Booking
 with st.sidebar:
     st.header("➕ Add Booking")
@@ -425,7 +429,7 @@ with tab2:
                 
                 # Payment collection buttons
                 st.write("---")
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3, col4, col5 = st.columns(5)
                 
                 with col1:
                     if not row.get('deposit_collected'):
@@ -449,10 +453,81 @@ with tab2:
                             st.rerun()
                 
                 with col4:
+                    if st.button("✏️ Edit", key=f"edit_{row['id']}"):
+                        st.session_state.editing_booking_id = row['id']
+                        st.rerun()
+                
+                with col5:
                     if st.button("🗑️ Delete", key=f"del_{row['id']}"):
                         st.session_state.bookings = st.session_state.bookings[st.session_state.bookings['id'] != row['id']]
                         save_bookings(st.session_state.bookings)
                         st.rerun()
+                
+                # Edit form (shown when this booking is being edited)
+                if st.session_state.editing_booking_id == row['id']:
+                    st.write("---")
+                    st.subheader("✏️ Edit Booking")
+                    
+                    with st.form(f"edit_form_{row['id']}"):
+                        edit_client = st.text_input("Client Name", value=row['client_name'])
+                        edit_event_date = st.date_input(
+                            "Event Date", 
+                            value=pd.to_datetime(row['event_date']).date()
+                        )
+                        
+                        # Price with day type suggestion
+                        edit_suggested = get_default_price(edit_event_date)
+                        edit_day_type = "Weekend" if is_weekend(edit_event_date) else "Weekday"
+                        st.caption(f"📅 {edit_day_type} - suggested ${edit_suggested:,}")
+                        
+                        edit_price = st.number_input(
+                            "Total Price ($)", 
+                            min_value=0, 
+                            value=int(row['total_price']),
+                            step=500
+                        )
+                        
+                        edit_is_ff = st.checkbox("Friends & Family discount", value=row.get('is_ff', False))
+                        edit_notes = st.text_area("Notes", value=row.get('notes', '') or '')
+                        
+                        col_save, col_cancel = st.columns(2)
+                        with col_save:
+                            save_edit = st.form_submit_button("💾 Save Changes", use_container_width=True)
+                        with col_cancel:
+                            cancel_edit = st.form_submit_button("❌ Cancel", use_container_width=True)
+                        
+                        if save_edit:
+                            # Recalculate payment schedule with new price/date
+                            new_schedule = calculate_payment_schedule(
+                                edit_event_date, 
+                                edit_price, 
+                                pd.to_datetime(row['booking_date']).date()
+                            )
+                            
+                            # Update the booking
+                            booking_idx = st.session_state.bookings['id'] == row['id']
+                            st.session_state.bookings.loc[booking_idx, 'client_name'] = edit_client
+                            st.session_state.bookings.loc[booking_idx, 'event_date'] = str(edit_event_date)
+                            st.session_state.bookings.loc[booking_idx, 'total_price'] = edit_price
+                            st.session_state.bookings.loc[booking_idx, 'day_type'] = edit_day_type
+                            st.session_state.bookings.loc[booking_idx, 'is_ff'] = edit_is_ff
+                            st.session_state.bookings.loc[booking_idx, 'notes'] = edit_notes
+                            
+                            # Update payment schedule amounts/dates
+                            st.session_state.bookings.loc[booking_idx, 'deposit_amount'] = new_schedule['deposit']['amount']
+                            st.session_state.bookings.loc[booking_idx, 'halfway_date'] = str(new_schedule['halfway']['date'])
+                            st.session_state.bookings.loc[booking_idx, 'halfway_amount'] = new_schedule['halfway']['amount']
+                            st.session_state.bookings.loc[booking_idx, 'final_date'] = str(new_schedule['final']['date'])
+                            st.session_state.bookings.loc[booking_idx, 'final_amount'] = new_schedule['final']['amount']
+                            
+                            save_bookings(st.session_state.bookings)
+                            st.session_state.editing_booking_id = None
+                            st.success(f"✅ Updated booking for {edit_client}")
+                            st.rerun()
+                        
+                        if cancel_edit:
+                            st.session_state.editing_booking_id = None
+                            st.rerun()
 
 with tab3:
     # Cash Flow Projection
